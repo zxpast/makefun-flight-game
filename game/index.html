@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Courier: Coral Isles — a flight game</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a141e;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #eef4f8; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .panel { position: absolute; background: rgba(8, 18, 28, 0.58); border: 1px solid rgba(255, 210, 125, 0.35);
+    border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(2px); }
+  .glow { color: #ffe9b0; text-shadow: 0 0 8px rgba(255, 210, 125, 0.65); }
+  .dim { color: #b8c8d4; font-size: 12px; }
+
+  /* top-left: the three big flight numbers + compass tape */
+  #hud-left { top: 12px; left: 12px; min-width: 372px; }
+  #hud-left .row { display: flex; gap: 22px; }
+  #hud-left .num { font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #hud-left .lbl { font-size: 11px; letter-spacing: 2px; color: #b8c8d4; }
+  #compass { display: block; margin-top: 6px; width: 360px; height: 34px; }
+  #stall-warn { margin-top: 4px; color: #ff5a4a; font-weight: 800; letter-spacing: 2px;
+    opacity: 0; transition: opacity 0.2s; text-shadow: 0 0 10px rgba(255, 60, 40, 0.8); }
+
+  /* top-right: throttle / fuel / hull + minimap */
+  #hud-right { top: 12px; right: 12px; width: 196px; text-align: right; }
+  #hud-right .bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; justify-content: flex-end; }
+  #hud-right .bar-row .lbl { font-size: 11px; letter-spacing: 1px; color: #b8c8d4; width: 44px; text-align: left; }
+  #hud-right .bar { flex: 1; height: 9px; background: rgba(255,255,255,0.18); border-radius: 5px; overflow: hidden; }
+  #hud-right .bar > div { height: 100%; border-radius: 5px; }
+  #hud-right .bar-num { font-size: 12px; font-weight: 700; width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+  #minimap { display: block; margin-top: 8px; width: 150px; height: 150px; margin-left: auto;
+    border: 1px solid rgba(255, 210, 125, 0.4); border-radius: 8px; }
+  #cam-mode, #gear-state { font-size: 11px; letter-spacing: 1px; }
+
+  /* top-centre: mission card */
+  #hud-mission { top: 12px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 340px; }
+  #mission-name { font-size: 19px; font-weight: 800; letter-spacing: 1px; }
+  #mission-objective { font-size: 12px; color: #cfe0ea; margin-top: 2px; }
+  #mission-progress { font-size: 13px; font-weight: 700; color: #7dff9a; margin-top: 3px; }
+  #mission-score { font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  #mission-score b { font-size: 17px; }
+
+  /* centre: target arrow */
+  #target-wrap { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; pointer-events: none; }
+  #target-arrow { font-size: 44px; color: #ffc861; text-shadow: 0 0 14px rgba(255, 180, 60, 0.9);
+    transition: transform 0.12s linear; line-height: 1; }
+  #target-dist { font-size: 13px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; }
+
+  /* bottom-centre: instrument cluster */
+  #gauges { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    width: 460px; height: 132px; }
+
+  /* bottom-left: controls hint */
+  #hint { bottom: 12px; left: 12px; font-size: 12px; line-height: 1.7; transition: opacity 1s; }
+
+  /* toast messages */
+  #toast { position: absolute; top: 24%; left: 50%; transform: translateX(-50%);
+    font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: #ffe9b0;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.7), 0 0 18px rgba(255, 210, 125, 0.5);
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; text-align: center; white-space: nowrap; }
+
+  /* overlays */
+  .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(5, 12, 20, 0.55); z-index: 10; }
+  .overlay-card { background: rgba(8, 20, 32, 0.92); border: 1px solid rgba(255, 210, 125, 0.5);
+    border-radius: 16px; padding: 28px 34px; max-width: 620px; text-align: center; }
+  .overlay-card h1 { margin: 0 0 4px; font-size: 40px; letter-spacing: 1px; color: #ffe9b0;
+    text-shadow: 0 0 18px rgba(255, 210, 125, 0.5); }
+  .overlay-card h2 { margin: 0 0 10px; font-size: 28px; }
+  .overlay-card p { margin: 8px 0; color: #d5e2ea; line-height: 1.55; }
+  .mission-btns { display: flex; gap: 10px; justify-content: center; margin: 16px 0 6px; flex-wrap: wrap; }
+  button { cursor: pointer; border: 1px solid #ffc861; background: #e86a1f; color: #fff;
+    font-size: 15px; font-weight: 700; padding: 11px 18px; border-radius: 10px; letter-spacing: 0.5px; }
+  button:hover { background: #f07d33; }
+  button.secondary { background: transparent; color: #ffe9b0; }
+  .keys { text-align: left; display: inline-block; font-size: 13px; line-height: 1.9; color: #cfe0ea; }
+  .keys b { color: #ffe9b0; display: inline-block; min-width: 118px; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="Sky Courier: fly the bush plane over the Coral Isles"></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+
+<div id="hud-left" class="panel">
+  <div class="row">
+    <div><div class="lbl">SPEED · KT</div><div class="num glow" id="spd">0</div></div>
+    <div><div class="lbl">ALTITUDE · FT</div><div class="num glow" id="alt">0</div></div>
+    <div><div class="lbl">HEADING</div><div class="num glow" id="hdg">090</div></div>
+  </div>
+  <canvas id="compass" width="360" height="34"></canvas>
+  <div id="stall-warn">⚠ STALL — NOSE DOWN, THROTTLE UP</div>
+</div>
+
+<div id="hud-right" class="panel">
+  <div class="bar-row"><span class="lbl">THR</span><div class="bar"><div id="thr-fill" style="width:0%;background:#7dff9a"></div></div><span class="bar-num glow" id="thr-num">0%</span></div>
+  <div class="bar-row"><span class="lbl">FUEL</span><div class="bar"><div id="fuel-fill" style="width:100%;background:#7dff9a"></div></div><span class="bar-num glow" id="fuel-num">100</span></div>
+  <div class="bar-row"><span class="lbl">HULL</span><div class="bar"><div id="hull-fill" style="width:100%;background:#7dff9a"></div></div><span class="bar-num glow" id="hull-num">100</span></div>
+  <div><span id="cam-mode">CHASE</span> · <span id="gear-state">GEAR DOWN</span></div>
+  <canvas id="minimap" width="150" height="150"></canvas>
+</div>
+
+<div id="hud-mission" class="panel">
+  <div id="mission-name" class="glow">Ring Run</div>
+  <div id="mission-objective">Thread all six sky rings, then put her down on Coral Field.</div>
+  <div id="mission-progress">Rings 0/6</div>
+  <div id="mission-score">SCORE <b id="score">0</b> &nbsp;·&nbsp; <span id="timer">00:00</span></div>
+</div>
+
+<div id="target-wrap">
+  <div id="target-arrow">➤</div>
+  <div id="target-dist">Ring 1 · 0 m</div>
+</div>
+
+<canvas id="gauges" width="460" height="132"></canvas>
+
+<div id="hint" class="panel">
+  <b class="glow">W/S</b> pitch &nbsp; <b class="glow">A/D</b> bank &amp; turn &nbsp; <b class="glow">Shift/Ctrl</b> throttle<br>
+  <b class="glow">G</b> gear &nbsp; <b class="glow">C</b> camera &nbsp; <b class="glow">H</b> autopilot &nbsp; <b class="glow">P</b> pause &nbsp; <b class="glow">R</b> restart<br>
+  <span class="dim">Mouse drag steers · wheel trims throttle · B brakes on the ground</span>
+</div>
+
+<div id="toast"></div>
+
+<div id="overlay-title" class="overlay">
+  <div class="overlay-card">
+    <h1>SKY COURIER</h1>
+    <p style="font-size:18px;margin-top:0"><b>Coral Isles</b> — a bush-plane flight game</p>
+    <p>Fly the Coral Courier over a tropical archipelago. Thread the glowing
+    rings, hop between island airstrips, and mind the fuel gauge: the sea is
+    not a runway. Land soft, land on the numbers, and the islands pay you back.</p>
+    <div class="mission-btns">
+      <button data-mission="ring-run">✈ Ring Run</button>
+      <button data-mission="island-hop">✈ Island Hop</button>
+      <button data-mission="free-flight">✈ Free Flight</button>
+    </div>
+    <div class="keys">
+      <div><b>W / S or ↑ / ↓</b> pitch up / down</div>
+      <div><b>A / D or ← / →</b> bank and turn</div>
+      <div><b>Shift / Ctrl</b> throttle up / down</div>
+      <div><b>G</b> landing gear &nbsp; <b>C</b> chase / cockpit &nbsp; <b>H</b> autopilot</div>
+      <div><b>Mouse drag</b> steer &nbsp; <b>Wheel</b> throttle &nbsp; <b>B</b> brake &nbsp; <b>P</b> pause</div>
+    </div>
+    <p class="dim">Take off from Coral Field: full throttle, pull up gently past 60 kt.
+    Gear down, slow and level to land — below 80 kt, sinking gently.</p>
+  </div>
+</div>
+
+<div id="overlay-pause" class="overlay">
+  <div class="overlay-card">
+    <h2 class="glow">Paused</h2>
+    <p>Press P to keep flying.</p>
+    <button class="secondary" id="resume-btn">Resume</button>
+  </div>
+</div>
+
+<div id="overlay-end" class="overlay">
+  <div class="overlay-card">
+    <h2 id="end-title">Mission complete!</h2>
+    <p id="end-body"></p>
+    <div class="mission-btns">
+      <button id="fly-again">✈ Fly again</button>
+      <button class="secondary" data-mission="ring-run">Ring Run</button>
+      <button class="secondary" data-mission="island-hop">Island Hop</button>
+      <button class="secondary" data-mission="free-flight">Free Flight</button>
+    </div>
+  </div>
+</div>
+
+<script src="./vendor/three.min.js"></script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
